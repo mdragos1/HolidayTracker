@@ -34,7 +34,8 @@ const App = () => {
     return {}; // format: { "personId|YYYY-MM-DD": true }
   });
 
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  // Dynamically default to current real-world year
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
   const [showOptions, setShowOptions] = useState(false);
   const [editingStaffId, setEditingStaffId] = useState(null);
   const [newName, setNewName] = useState("");
@@ -44,7 +45,7 @@ const App = () => {
   const [selectedCells, setSelectedCells] = useState([]);
   const [limitWarning, setLimitWarning] = useState(null);
 
-  // --- Document Title ---
+  // --- Document Title with current active year ---
   useEffect(() => {
     document.title = `Shield House Dentistry - Holiday Tracker (${selectedYear})`;
   }, [selectedYear]);
@@ -224,9 +225,13 @@ const App = () => {
               >
                 <ChevronLeft size={16} />
               </button>
-              <span className="px-3 text-sm font-bold text-slate-700 min-w-[56px] text-center tracking-tight">
+              <button
+                onClick={() => setSelectedYear(new Date().getFullYear())}
+                className="px-3 text-sm font-bold text-slate-700 min-w-[56px] text-center tracking-tight hover:text-indigo-600 transition"
+                title="Click to reset to current year"
+              >
                 {selectedYear}
-              </span>
+              </button>
               <button 
                 onClick={() => setSelectedYear(y => y + 1)} 
                 className="p-1.5 hover:bg-white hover:text-slate-900 rounded-lg text-slate-600 transition shadow-sm"

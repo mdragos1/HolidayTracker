@@ -11,7 +11,8 @@ import {
   Users, 
   Clock, 
   Sparkles,
-  SlidersHorizontal
+  SlidersHorizontal,
+  AlertCircle
 } from 'lucide-react';
 
 const App = () => {
@@ -41,6 +42,12 @@ const App = () => {
 
   // Multi-day selection state
   const [selectedCells, setSelectedCells] = useState([]);
+  const [limitWarning, setLimitWarning] = useState(null);
+
+  // --- Document Title ---
+  useEffect(() => {
+    document.title = `Shield House Dentistry - Holiday Tracker (${selectedYear})`;
+  }, [selectedYear]);
 
   // --- Persistence ---
   useEffect(() => {
@@ -100,15 +107,6 @@ const App = () => {
     if (editingStaffId === id) setEditingStaffId(null);
   };
 
-  const toggleCellSelection = (personId, dateStr) => {
-    const cellKey = `${personId}|${dateStr}`;
-    if (selectedCells.includes(cellKey)) {
-      setSelectedCells(selectedCells.filter(key => key !== cellKey));
-    } else {
-      setSelectedCells([...selectedCells, cellKey]);
-    }
-  };
-
   const confirmBooking = () => {
     const newHolidays = { ...holidays };
     selectedCells.forEach(cellKey => {
@@ -135,6 +133,48 @@ const App = () => {
       }
     });
     return bookedThisYear;
+  };
+
+  const getPersonRemainingDays = (personId) => {
+    const person = people.find(p => p.id === personId);
+    if (!person) return 0;
+    const totalAllowed = (person.entitlement || 0) + (person.bankHolidays || 0);
+    const booked = getYearStats(personId);
+    // Also deduct newly selected cells for this person that aren't already saved as booked
+    const newlySelected = selectedCells.filter(cellKey => {
+      return cellKey.startsWith(`${personId}|${selectedYear}`) && !holidays[cellKey];
+    }).length;
+    return totalAllowed - booked - newlySelected;
+  };
+
+  const toggleCellSelection = (personId, dateStr) => {
+    const cellKey = `${personId}|${dateStr}`;
+    const isAlreadySelected = selectedCells.includes(cellKey);
+    const isAlreadyBooked = Boolean(holidays[cellKey]);
+
+    // If deselecting, allow without restriction
+    if (isAlreadySelected) {
+      setSelectedCells(selectedCells.filter(key => key !== cellKey));
+      setLimitWarning(null);
+      return;
+    }
+
+    // If already booked, allow selection so user can choose to clear it
+    if (isAlreadyBooked) {
+      setSelectedCells([...selectedCells, cellKey]);
+      return;
+    }
+
+    // Check available days before selecting a new day
+    const remainingDays = getPersonRemainingDays(personId);
+    if (remainingDays <= 0) {
+      const person = people.find(p => p.id === personId);
+      setLimitWarning(`${person?.name || 'Staff member'} has reached their total allowance (${(person?.entitlement || 0) + (person?.bankHolidays || 0)} days) for ${selectedYear}.`);
+      return;
+    }
+
+    setLimitWarning(null);
+    setSelectedCells([...selectedCells, cellKey]);
   };
 
   const displayPeople = filterPersonId === 'ALL' 
@@ -210,6 +250,22 @@ const App = () => {
 
       <main className="max-w-7xl mx-auto px-6 pt-8 space-y-8">
         
+        {/* Limit Warning Alert */}
+        {limitWarning && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded-2xl flex items-center justify-between shadow-sm animate-fade-in">
+            <div className="flex items-center space-x-2.5">
+              <AlertCircle size={18} className="text-amber-600 shrink-0" />
+              <span className="text-xs font-semibold">{limitWarning}</span>
+            </div>
+            <button 
+              onClick={() => setLimitWarning(null)} 
+              className="text-amber-500 hover:text-amber-800 p-1 rounded-lg"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        )}
+
         {/* Staff Dashboard Cards (Replaces the raw spreadsheet stats table) */}
         <section>
           <div className="flex items-center justify-between mb-4">
@@ -347,26 +403,28 @@ const App = () => {
 
         {/* Schedule Grid */}
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center space-x-2">
               <Clock size={16} className="text-slate-400" />
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">
-                Annual Timetable &bull; Click to select dates
+                Full Annual Schedule &bull; {selectedYear}
               </h2>
             </div>
-            <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
+
+            <div className="flex items-center space-x-3 text-xs font-medium text-slate-500">
               <div className="flex items-center space-x-1.5">
-                <span className="w-3 h-3 rounded-full bg-indigo-600"></span>
-                <span>Booked Holiday</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                <span>Booked</span>
               </div>
               <div className="flex items-center space-x-1.5">
-                <span className="w-3 h-3 rounded-md bg-indigo-100 border border-indigo-400"></span>
+                <span className="w-2.5 h-2.5 rounded-md bg-indigo-100 border border-indigo-400"></span>
                 <span>Selected</span>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* Strict 2-Column Grid (1 column on small screens, exactly 2 columns across 6 rows on larger screens) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {MONTHS.map((monthName, monthIndex) => {
               const daysInMonth = getDaysInMonth(selectedYear, monthIndex);
               const weekdays = [];
@@ -382,7 +440,7 @@ const App = () => {
                   className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-md transition-shadow"
                 >
                   {/* Month Banner */}
-                  <div className="px-5 py-3.5 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between">
+                  <div className="px-5 py-3 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between">
                     <span className="font-bold text-sm tracking-wide">{monthName}</span>
                     <span className="text-[11px] text-slate-400 font-medium bg-slate-800/80 px-2 py-0.5 rounded-full">
                       {weekdays.length} Working Days
@@ -409,58 +467,68 @@ const App = () => {
                                   isWeekendBreak ? 'border-r-2 border-r-slate-300' : 'border-r border-slate-100'
                                 }`}
                               >
-                                <div className="text-[10px] text-slate-400 font-medium">{dayLetter}</div>
+                                <div className="text-slate-400 font-medium text-[10px]">{dayLetter}</div>
                                 <div className="font-bold text-slate-700">{day}</div>
                               </th>
                             );
                           })}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {displayPeople.map(person => (
-                          <tr key={person.id} className="hover:bg-slate-50/60 transition group">
-                            <td className="py-2.5 px-3 font-semibold text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50/60 border-r border-slate-200/70 z-10 truncate max-w-[85px] shadow-[2px_0_4px_rgba(0,0,0,0.02)]">
-                              {person.name}
-                            </td>
+                      <tbody>
+                        {displayPeople.map(person => {
+                          const remainingForPerson = getPersonRemainingDays(person.id);
+                          const isCapped = remainingForPerson <= 0;
 
-                            {weekdays.map(day => {
-                              const dateStr = formatDate(selectedYear, monthIndex, day);
-                              const cellKey = `${person.id}|${dateStr}`;
-                              const isBooked = Boolean(holidays[cellKey]);
-                              const isSelected = selectedCells.includes(cellKey);
-                              const isWeekendBreak = isFriday(selectedYear, monthIndex, day);
+                          return (
+                            <tr key={person.id} className="hover:bg-slate-50/60 transition group">
+                              <td className="py-2.5 px-3 font-semibold text-slate-700 sticky left-0 bg-white group-hover:bg-slate-50/60 border-r border-slate-200/70 z-10 truncate max-w-[85px] shadow-[2px_0_4px_rgba(0,0,0,0.02)]">
+                                {person.name}
+                              </td>
 
-                              return (
-                                <td 
-                                  key={day} 
-                                  onClick={() => toggleCellSelection(person.id, dateStr)}
-                                  className={`
-                                    cursor-pointer p-1 text-center transition-all select-none
-                                    ${isWeekendBreak ? 'border-r-2 border-r-slate-300' : 'border-r border-slate-100'}
-                                    ${isSelected ? 'bg-indigo-50' : ''}
-                                  `}
-                                >
-                                  <div 
+                              {weekdays.map(day => {
+                                const dateStr = formatDate(selectedYear, monthIndex, day);
+                                const cellKey = `${person.id}|${dateStr}`;
+                                const isBooked = Boolean(holidays[cellKey]);
+                                const isSelected = selectedCells.includes(cellKey);
+                                const isWeekendBreak = isFriday(selectedYear, monthIndex, day);
+                                const isLocked = isCapped && !isBooked && !isSelected;
+
+                                return (
+                                  <td 
+                                    key={day} 
+                                    onClick={() => toggleCellSelection(person.id, dateStr)}
+                                    title={isLocked ? `${person.name} has no remaining days for ${selectedYear}` : undefined}
                                     className={`
-                                      w-6 h-6 mx-auto rounded-lg flex items-center justify-center transition-all duration-150
-                                      ${isSelected 
-                                        ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400 scale-105' 
-                                        : isBooked 
-                                          ? 'bg-indigo-600 text-white shadow-sm' 
-                                          : 'hover:bg-slate-200/70'
-                                      }
+                                      p-1 text-center transition-all select-none
+                                      ${isWeekendBreak ? 'border-r-2 border-r-slate-300' : 'border-r border-slate-100'}
+                                      ${isSelected ? 'bg-indigo-50' : ''}
+                                      ${isLocked ? 'cursor-not-allowed opacity-40 bg-slate-100/50' : 'cursor-pointer'}
                                     `}
                                   >
-                                    {isBooked && !isSelected && (
-                                      <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                                    )}
-                                    {isSelected && <Check size={12} strokeWidth={3} />}
-                                  </div>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
+                                    <div 
+                                      className={`
+                                        w-6 h-6 mx-auto rounded-lg flex items-center justify-center transition-all duration-150
+                                        ${isSelected 
+                                          ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-400 scale-105' 
+                                          : isBooked 
+                                            ? 'bg-indigo-600 text-white shadow-sm' 
+                                            : isLocked
+                                              ? 'border border-dashed border-slate-300'
+                                              : 'hover:bg-slate-200/70'
+                                        }
+                                      `}
+                                    >
+                                      {isBooked && !isSelected && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
+                                      )}
+                                      {isSelected && <Check size={12} strokeWidth={3} />}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
